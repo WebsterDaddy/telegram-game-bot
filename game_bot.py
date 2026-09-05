@@ -110,5 +110,23 @@ def main():
     print(f"Bot is running! Loaded {len(QUESTIONS)} questions from file. Press Ctrl+C to stop.")
     application.run_polling()
 
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+
+# Simple dummy server to satisfy Render's web service port requirement
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")
+
+def run_web_server():
+    server_address = ('', 10000)
+    httpd = HTTPServer(server_address, SimpleHandler)
+    httpd.serve_forever()
+
+# Run the web server in a background thread so it doesn't block the Telegram bot
+threading.Thread(target=run_web_server, daemon=True).start()
+
 if __name__ == '__main__':
     main()
