@@ -118,7 +118,7 @@ async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     # Insert your BotFather token here
-    application = Application.builder().token("8625371369:AAHtXLWOI6VKfRB3Vq8d3cBQ1H0Dp_G_5GY").build()
+    application = Application.builder().token("8955952216:AAEei8lsK4MFpyhkvTmRzimk5PDCfGxUftI").build()
 
     application.add_handler(CommandHandler("startgame", start_game))
     application.add_handler(CommandHandler("answer", answer))
