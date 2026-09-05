@@ -99,6 +99,23 @@ async def interrogate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ends the current game and clears the stored state."""
+    if update.message.chat.type == "private":
+        await update.message.reply_text("Run this command in the Group Chat!")
+        return
+
+    # Clear out all answers and question state
+    game_state["answers"] = {}
+    game_state["names"] = {}
+    game_state["current_question"] = ""
+    
+    await update.message.reply_text(
+        "🛑 *GAME ENDED!* 🛑\n\n"
+        "All previous answers have been cleared. Type /startgame whenever you're ready for a new round!",
+        parse_mode="Markdown"
+    )
+
 def main():
     # Insert your BotFather token here
     application = Application.builder().token("8625371369:AAHtXLWOI6VKfRB3Vq8d3cBQ1H0Dp_G_5GY").build()
@@ -106,6 +123,7 @@ def main():
     application.add_handler(CommandHandler("startgame", start_game))
     application.add_handler(CommandHandler("answer", answer))
     application.add_handler(CommandHandler("interrogate", interrogate))
+    application.add_handler(CommandHandler("endgame", end_game))
 
     print(f"Bot is running! Loaded {len(QUESTIONS)} questions from file. Press Ctrl+C to stop.")
     application.run_polling()
