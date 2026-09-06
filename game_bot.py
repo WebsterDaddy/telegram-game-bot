@@ -1,14 +1,16 @@
 import os
 import random
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # In-memory database to store our game state
 game_state = {
     "group_chat_id": None,
     "answers": {},  # Maps user_id to their text answer
     "names": {},     # Maps user_id to their first name
-    "current_question": ""
+    "current_question": "",
+    "imposter_id": None,  # Tracks the actual author
+    "votes": {}           # Tracks who voted for who
 }
 
 def load_questions():
@@ -79,23 +81,82 @@ async def answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def interrogate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Picks a random answer and starts the debate."""
+    """Picks a random answer and displays a voting keyboard."""
     if update.message.chat.type == "private":
-        await update.message.reply_text("Run this command in the Group Chat to start the debate!")
+        await update.message.reply_text("Run this command in the Group Chat!")
         return
 
     if not game_state["answers"]:
         await update.message.reply_text("No one has submitted an answer yet!")
         return
         
+    # Pick the imposter and save their ID
     imposter_id = random.choice(list(game_state["answers"].keys()))
+    game_state["imposter_id"] = imposter_id
     imposter_answer = game_state["answers"][imposter_id]
+    game_state["votes"] = {} # Clear old votes
+    
+    # Generate a button for each player
+    keyboard = []
+    for uid, name in game_state["names"].items():
+        # The callback_data stores the user_id of the suspect
+        keyboard.append([InlineKeyboardButton(name, callback_data=str(uid))])
+        
+    reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
         f"🚨 *INTERROGATION PHASE* 🚨\n\n"
-        f"Question was: *\"{game_state['current_question']}\"*\n\n"
+        f"Question: *\"{game_state['current_question']}\"*\n\n"
         f"Someone answered: *\"{imposter_answer}\"*\n\n"
-        f"Who do you think it is? Discuss in the chat! The imposter must try to blend in.",
+        f"Who do you think wrote this? Discuss and cast your vote below!",
+        parse_mode="Markdown",
+        reply_markup=reply_markup
+    )
+
+async def handle_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Records a vote and updates the keyboard tallies."""
+    query = update.callback_query
+    voter_id = query.from_user.id
+    suspect_id = int(query.data)
+
+    # Record the vote
+    game_state["votes"][voter_id] = suspect_id
+    
+    # Flash a temporary alert on the user's screen
+    await query.answer(f"You voted for {game_state['names'][suspect_id]}!")
+
+    # Tally all votes
+    vote_counts = {}
+    for v_id, s_id in game_state["votes"].items():
+        vote_counts[s_id] = vote_counts.get(s_id, 0) + 1
+
+    # Rebuild the keyboard with live vote counts
+    keyboard = []
+    for uid, name in game_state["names"].items():
+        count = vote_counts.get(uid, 0)
+        button_text = f"{name} ({count} votes)" if count > 0 else name
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=str(uid))])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # Edit the original message to show the new tallies
+    try:
+        await query.edit_message_reply_markup(reply_markup=reply_markup)
+    except:
+        pass # Ignores errors if someone clicks the exact same button twice
+
+async def reveal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reveals the true author of the answer."""
+    if not game_state.get("imposter_id"):
+        await update.message.reply_text("There is no active interrogation to reveal!")
+        return
+
+    imposter_name = game_state["names"][game_state["imposter_id"]]
+
+    await update.message.reply_text(
+        f"🎭 *THE TRUTH IS REVEALED!* 🎭\n\n"
+        f"The answer was actually written by: *{imposter_name}*!\n\n"
+        f"Type /endgame to clear the board.",
         parse_mode="Markdown"
     )
 
@@ -105,24 +166,27 @@ async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Run this command in the Group Chat!")
         return
 
-    # Clear out all answers and question state
+    # Clear out absolutely everything
     game_state["answers"] = {}
     game_state["names"] = {}
     game_state["current_question"] = ""
+    game_state["imposter_id"] = None    # <--- ADD THIS
+    game_state["votes"] = {}            # <--- ADD THIS
     
     await update.message.reply_text(
         "🛑 *GAME ENDED!* 🛑\n\n"
         "All previous answers have been cleared. Type /startgame whenever you're ready for a new round!",
         parse_mode="Markdown"
     )
-
 def main():
     # Insert your BotFather token here
-    application = Application.builder().token("8955952216:AAEei8lsK4MFpyhkvTmRzimk5PDCfGxUftI").build()
+    application = Application.builder().token("8955952216:AAEx13CGv0kl65CgPzj6kK4Tdcbyqh8cpq4").build()
 
     application.add_handler(CommandHandler("startgame", start_game))
     application.add_handler(CommandHandler("answer", answer))
     application.add_handler(CommandHandler("interrogate", interrogate))
+    application.add_handler(CommandHandler("reveal", reveal))          # <-- New
+    application.add_handler(CallbackQueryHandler(handle_vote))
     application.add_handler(CommandHandler("endgame", end_game))
 
     print(f"Bot is running! Loaded {len(QUESTIONS)} questions from file. Press Ctrl+C to stop.")
@@ -139,7 +203,9 @@ class SimpleHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot is alive!")
 
 def run_web_server():
-    server_address = ('', 10000)
+    # Grabs Render's assigned port, defaults to 10000 locally
+    port = int(os.environ.get("PORT", 10000))
+    server_address = ('', port)
     httpd = HTTPServer(server_address, SimpleHandler)
     httpd.serve_forever()
 
