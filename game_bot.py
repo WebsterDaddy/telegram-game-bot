@@ -10,7 +10,8 @@ game_state = {
     "names": {},     # Maps user_id to their first name
     "current_question": "",
     "imposter_id": None,  # Tracks the actual author
-    "votes": {}           # Tracks who voted for who
+    "votes": {},           # Tracks who voted for who
+    "last_imposter_id": None
 }
 
 def load_questions():
@@ -90,9 +91,21 @@ async def interrogate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No one has submitted an answer yet!")
         return
         
-    # Pick the imposter and save their ID
-    imposter_id = random.choice(list(game_state["answers"].keys()))
+    # Get everyone who submitted an answer
+    available_suspects = list(game_state["answers"].keys())
+    
+    # ANTI-REPEAT LOGIC: If we have at least 2 players, 
+    # remove the person who was the imposter last round so they get a break!
+    last_imposter = game_state.get("last_imposter_id")
+    if len(available_suspects) > 1 and last_imposter in available_suspects:
+        available_suspects.remove(last_imposter)
+        
+    # Pick the imposter from the remaining suspects
+    imposter_id = random.choice(available_suspects)
+    
+    # Save the IDs
     game_state["imposter_id"] = imposter_id
+    game_state["last_imposter_id"] = imposter_id  # Save this for the next round
     imposter_answer = game_state["answers"][imposter_id]
     game_state["votes"] = {} # Clear old votes
     
